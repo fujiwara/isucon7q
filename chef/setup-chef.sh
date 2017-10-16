@@ -7,8 +7,8 @@ echo "deb http://repo.percona.com/apt `lsb_release -cs` main" >> /etc/apt/source
 echo "deb-src http://repo.percona.com/apt `lsb_release -cs` main" >> /etc/apt/sources.list.d/percona.list
 
 apt-get update
-apt-get -y install ruby ruby-dev gcc make build-essential vim ack-grep silversearcher-ag percona-toolkit tig build-essential make libpcre3 libpcre3-dev libgeoip-dev
-wget -O /tmp/chef_12.21.14-1_amd64.deb "https://packages.chef.io/stable/ubuntu/12.04/chef_12.21.14-1_amd64.deb"
+apt-get -y --allow-unauthenticated install ruby ruby-dev gcc make build-essential vim ack-grep silversearcher-ag percona-toolkit tig build-essential make libpcre3 libpcre3-dev libgeoip-dev
+wget -O /tmp/chef_12.21.14-1_amd64.deb "https://packages.chef.io/files/stable/chef/12.21.14/ubuntu/16.04/chef_12.21.14-1_amd64.deb"
 dpkg -i /tmp/chef_12.21.14-1_amd64.deb
 git config --global push.default simple
 
