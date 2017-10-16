@@ -5,7 +5,7 @@
   'ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAxMmtxtTvqFo8YFXLYcBk9oi9ZUbcf/Yrj4VK00MP/sBrc8YfJ1gAp9DTkemR1JcbjOF/nhDjw14mvK8KPYWqmCVzbpL0SummUF987oI8pfZWCh7mnFmSEIwmwZ8nyYVLw1YQk50Z84oRRa/Q1C5q0Tft9wC7xYSDfSY5Hrft0hhqJexYCdfAQ5nnwx3377tCCgRleEgBS0jBcd0qwuyu3b1b8G7yFfZPOFNrzJss0jYY8X2zec31qdh2p3n2P38lRjfSKbjamXZWnEsFf4ju6NcpNUfFcGqtImkobIR/dDlSjvR/BD48xNDt9bFjqzNF1t8qBEqNqsC695DDdbQS9Q==',
   'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7joI29NVJhWFEG2rRgJRD4MVK1/NutqxWxLMaBuq+545xckqhNOP8LdpV+3jaRm66M5xSoKd2mEj//LLquxknPFn6ggUqUiB08yDFRlqL7CA3N36HcrAZ4oiVHuHsq1mlcYIalVlnl8X0BeVDo7JUabOjSrAd4izhnGvafIGRzhiSe5TS6uedWCggj7fBHp3FjVbKoYYJPAUQpX+Sex4go/a12aDhCimEnMsF3Wl+p19MpRsraIvCmq5AIpzZHUa9S4iFRFnAFtiiHkHUUjx/zOZfXgh1/64fY73ytoJyToGniwjBKyxmdoL1nSKKjmfLr1pkgny+BKcc+dZvrqmb',
 ].each do |pubkey|
-  bash "update-pubkey" do
+  bash "update-pubkey #{pubkey[0..63]}" do
     user "isucon"
     code "echo '#{pubkey}' >> /home/isucon/.ssh/authorized_keys"
     not_if "fgrep '#{pubkey}' /home/isucon/.ssh/authorized_keys"

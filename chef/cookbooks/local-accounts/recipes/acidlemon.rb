@@ -1,6 +1,6 @@
 user "acidlemon" do
   home "/home/acidlemon"
-  supports :manage_home => true
+  manage_home true
   shell "/bin/bash"
 end
 
