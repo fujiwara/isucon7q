@@ -1,0 +1,5 @@
+role/
+data_bags/
+*~
+nodes/image.json
+config/local-mode-cache/
