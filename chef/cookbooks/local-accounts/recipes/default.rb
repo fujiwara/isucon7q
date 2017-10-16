@@ -21,3 +21,9 @@ end
 include_recipe 'local-accounts::fujiwara'
 include_recipe 'local-accounts::acidlemon'
 include_recipe 'local-accounts::handlename'
+
+group 'sudo' do
+  action [:modify]
+  members ['fujiwara', 'acidlemon', 'handlename']
+  append true
+end
