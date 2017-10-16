@@ -1,0 +1,7 @@
+name "common-packages"
+maintainer       "YOUR_COMPANY_NAME"
+maintainer_email "YOUR_EMAIL"
+license          "All rights reserved"
+description      "Installs/Configures common-packages"
+long_description IO.read(File.join(File.dirname(__FILE__), 'README.rdoc'))
+version          "0.0.1"
