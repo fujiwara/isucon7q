@@ -1,7 +1,7 @@
 user "fujiwara" do
   password "$6$K0ZhMyG4$Feu6sh.kOMl2KMS6R4maLTkDRbbqceH22tFGVxwNNljB7bxj8jpZpksPlEXM3Q.8Yy18ljKSIl/x/4zVtzNca."
   home "/home/fujiwara"
-  supports :manage_home => true
+  manage_home true
   shell "/bin/bash"
 end
 
