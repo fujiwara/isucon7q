@@ -111,7 +111,17 @@ func addMessage(channelID, userID int64, content string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	resId, resErr := res.LastInsertId()
+
+	res, err = db.Exec(
+		"UPDATE channel SET message_count = message_count + 1 WHERE id = ?",
+		channelID,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return resId, resErr
 }
 
 type Message struct {
@@ -213,6 +223,7 @@ func getInitialize(c echo.Context) error {
 	db.MustExec("DELETE FROM channel WHERE id > 10")
 	db.MustExec("DELETE FROM message WHERE id > 10000")
 	db.MustExec("DELETE FROM haveread")
+	db.MustExec("UPDATE channel JOIN (SELECT channel_id, COUNT(*) msg_count FROM message GROUP BY channel_id) tmp ON tmp.channel_id = channel.id SET message_count = msg_count")
 	return c.String(204, "")
 }
 
@@ -475,7 +486,7 @@ func fetchUnread(c echo.Context) error {
 				chID, lastID)
 		} else {
 			err = db.Get(&cnt,
-				"SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?",
+				"SELECT message_count as cnt FROM channel WHERE id = ?",
 				chID)
 		}
 		if err != nil {
@@ -514,7 +525,7 @@ func getHistory(c echo.Context) error {
 
 	const N = 20
 	var cnt int64
-	err = db.Get(&cnt, "SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?", chID)
+	err = db.Get(&cnt, "SELECT message_count as cnt FROM channel WHERE id = ?", chID)
 	if err != nil {
 		return err
 	}
