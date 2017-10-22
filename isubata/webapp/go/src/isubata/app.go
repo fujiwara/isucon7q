@@ -115,16 +115,21 @@ func addMessage(channelID, userID int64, content string) (int64, error) {
 }
 
 type Message struct {
-	ID        int64     `db:"id"`
-	ChannelID int64     `db:"channel_id"`
-	UserID    int64     `db:"user_id"`
-	Content   string    `db:"content"`
-	CreatedAt time.Time `db:"created_at"`
+	ID              int64     `db:"id"`
+	ChannelID       int64     `db:"channel_id"`
+	UserID          int64     `db:"user_id"`
+	Content         string    `db:"content"`
+	CreatedAt       time.Time `db:"created_at"`
+	UserName        string    `db:"user_name"`
+	UserDisplayName string    `db:"user_display_name"`
+	UserAvatarIcon  string    `db:"user_avatar_icon"`
 }
 
 func queryMessages(chanID, lastID int64) ([]Message, error) {
 	msgs := []Message{}
-	err := db.Select(&msgs, "SELECT * FROM message WHERE id > ? AND channel_id = ? ORDER BY id DESC LIMIT 100",
+	err := db.Select(&msgs, "SELECT m.*, u.name as user_name, u.display_name as user_display_name, u.avatar_icon as user_avatar_icon "+
+		"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id > ? AND m.channel_id = ? "+
+		"ORDER BY m.id DESC LIMIT 100",
 		lastID, chanID)
 	return msgs, err
 }
@@ -389,10 +394,16 @@ func getMessage(c echo.Context) error {
 	response := make([]map[string]interface{}, 0)
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
-		r, err := jsonifyMessage(m)
-		if err != nil {
-			return err
+		r := make(map[string]interface{})
+		r["id"] = m.ID
+		r["user"] = User{
+			ID:          m.UserID,
+			Name:        m.UserName,
+			DisplayName: m.UserDisplayName,
+			AvatarIcon:  m.UserAvatarIcon,
 		}
+		r["date"] = m.CreatedAt.Format("2006/01/02 15:04:05")
+		r["content"] = m.Content
 		response = append(response, r)
 	}
 
@@ -691,11 +702,11 @@ func postProfile(c echo.Context) error {
 func getIcon(c echo.Context) error {
 	// ローカルにファイルあったらそれを使う
 	fileName := c.Param("file_name")
-	path := `/home/isucon/isubata/webapp/public/icons/`+fileName
+	path := `/home/isucon/isubata/webapp/public/icons/` + fileName
 	if _, err := os.Stat(path); os.IsExist(err) {
 		return c.File(path)
 	}
-	
+
 	var name string
 	var data []byte
 	err := db.QueryRow("SELECT name, data FROM image WHERE name = ? LIMIT 1",
