@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -686,16 +687,13 @@ func postProfile(c echo.Context) error {
 	}
 
 	avatarName := ""
-	avatarData := make([]byte, 0, 1024)
-
-	editName := c.FormValue("display_name");
-	updateAvatarIcon := ""
+	var avatarData []byte
 
 	if fh, err := c.FormFile("avatar_icon"); err == http.ErrMissingFile {
-		if err != nil {
-			return err
-		}
-
+		// no file upload
+	} else if err != nil {
+		return err
+	} else {
 		dotPos := strings.LastIndexByte(fh.Filename, '.')
 		if dotPos < 0 {
 			return ErrBadReqeust
@@ -712,54 +710,37 @@ func postProfile(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		_, err = file.Read(avatarData)
-		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData), ext)
+		avatarData, _ = ioutil.ReadAll(file)
+		file.Close()
 
-		if avatarName != "" && len(avatarData) > 0 {
-			// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
-			path := `/home/isucon/isubata/webapp/public/icons/`+ imageDir + avatarName
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				// ファイルがないのでつくります
-				localFile, err := os.Create(path)
-				if err != nil {
-					return err
-				}
-				n1, err := localFile.Write(avatarData)
-				if err != nil {
-					return err
-				}
-				n2, err := io.Copy(localFile, file)
-				if err != nil {
-					return err
-				}
-				localFile.Close()
+		if len(avatarData) > avatarMaxBytes {
+			return ErrBadReqeust
+		}
 
-				if n1 + int(n2) > avatarMaxBytes {
-					os.Remove(path)
-					return ErrBadReqeust
-				}
+		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData[:1023]), ext)
+	}
+
+	if avatarName != "" && len(avatarData) > 0 {
+		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
+		path := `/home/isucon/isubata/webapp/public/icons/`+ imageDir + avatarName
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			// ファイルがないときだけ書く
+			err := ioutil.WriteFile(path, avatarData, 0644)
+			if err != nil {
+				return err
 			}
-
-			updateAvatarIcon = imageDir + avatarName
 		}
-
+		_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?", imageDir + avatarName, self.ID)
+		if err != nil {
+			return err
+		}
 	}
 
-	if updateAvatarIcon != "" {
-		if editName != "" {
-			_, err = db.Exec("UPDATE user SET avatar_icon = ? AND display_name = ? WHERE id = ?",
-				updateAvatarIcon, editName, self.ID)
-		} else {
-			_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?",
-				updateAvatarIcon, self.ID)
+	if name := c.FormValue("display_name"); name != "" {
+		_, err := db.Exec("UPDATE user SET display_name = ? WHERE id = ?", name, self.ID)
+		if err != nil {
+			return err
 		}
-	} else if editName != "" {
-		_, err = db.Exec("UPDATE user SET display_name = ? WHERE id = ?",
-			editName, self.ID)
-	}
-	if err != nil {
-		return err
 	}
 
 	return c.Redirect(http.StatusSeeOther, "/")
