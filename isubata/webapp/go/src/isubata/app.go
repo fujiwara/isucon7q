@@ -64,7 +64,7 @@ func init() {
 		db_password = ":" + db_password
 	}
 
-	dsn := fmt.Sprintf("%s%s@tcp(%s:%s)/isubata?parseTime=true&loc=Local&charset=utf8mb4",
+	dsn := fmt.Sprintf("%s%s@tcp(%s:%s)/isubata?parseTime=true&loc=Local&charset=utf8mb4&interpolateParams=true",
 		db_user, db_password, db_host, db_port)
 
 	log.Printf("Connecting to db: %q", dsn)
@@ -443,27 +443,6 @@ func queryChannels() ([]int64, error) {
 	return res, err
 }
 
-func queryHaveRead(userID, chID int64) (int64, error) {
-	type HaveRead struct {
-		UserID    int64     `db:"user_id"`
-		ChannelID int64     `db:"channel_id"`
-		MessageID int64     `db:"message_id"`
-		UpdatedAt time.Time `db:"updated_at"`
-		CreatedAt time.Time `db:"created_at"`
-	}
-	h := HaveRead{}
-
-	err := db.Get(&h, "SELECT * FROM haveread WHERE user_id = ? AND channel_id = ?",
-		userID, chID)
-
-	if err == sql.ErrNoRows {
-		return 0, nil
-	} else if err != nil {
-		return 0, err
-	}
-	return h.MessageID, nil
-}
-
 func fetchUnread(c echo.Context) error {
 	userID := sessUserID(c)
 	if userID == 0 {
@@ -479,22 +458,47 @@ func fetchUnread(c echo.Context) error {
 
 	resp := []map[string]interface{}{}
 
-	for _, chID := range channels {
-		lastID, err := queryHaveRead(userID, chID)
+	type HaveRead struct {
+		ChannelID int64 `db:"channel_id"`
+		MessageID int64 `db:"message_id"`
+	}
+
+	// lastIDをまとめて取ってくる
+	haveReads := make(map[int64]int64)
+	{
+		query, args, err := sqlx.In(
+			"SELECT channel_id, message_id FROM haveread WHERE user_id = ? AND channel_id in (?)",
+			userID, channels)
 		if err != nil {
 			return err
 		}
 
-		var cnt int64
-		if lastID > 0 {
-			err = db.Get(&cnt,
-				"SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id",
-				chID, lastID)
-		} else {
-			err = db.Get(&cnt,
-				"SELECT message_count as cnt FROM channel WHERE id = ?",
-				chID)
+		hs := []HaveRead{}
+		err = db.Select(&hs, query, args...)
+		if err != nil {
+			return err
 		}
+
+		for _, h := range hs {
+			haveReads[h.ChannelID] = h.MessageID
+		}
+	}
+
+	noReadChanIDs := []int64{}
+
+	for _, chID := range channels {
+		lastID := haveReads[chID]
+
+		// 未読情報がないものはあとでまとめて取る
+		if lastID == 0 {
+			noReadChanIDs = append(noReadChanIDs, chID)
+			continue
+		}
+
+		var cnt int64
+		err = db.Get(&cnt,
+			"SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id",
+			chID, lastID)
 		if err != nil {
 			return err
 		}
@@ -502,6 +506,28 @@ func fetchUnread(c echo.Context) error {
 			"channel_id": chID,
 			"unread":     cnt}
 		resp = append(resp, r)
+	}
+
+	// 未読情報がないもの
+	if 0 < len(noReadChanIDs) {
+		query, args, err := sqlx.In("SELECT * FROM channel WHERE id in (?)",
+			noReadChanIDs)
+		if err != nil {
+			return nil
+		}
+
+		chans := []ChannelInfo{}
+		err = db.Select(&chans, query, args...)
+		if err != nil {
+			return err
+		}
+
+		for _, ch := range chans {
+			r := map[string]interface{}{
+				"channel_id": ch.ID,
+				"unread":     ch.MessageCount}
+			resp = append(resp, r)
+		}
 	}
 
 	return c.JSON(http.StatusOK, resp)
@@ -556,8 +582,8 @@ func getHistory(c echo.Context) error {
 	messages := []Message{}
 	if 0 < len(messageIDs) {
 		query, args, err := sqlx.In("SELECT m.*, u.name as user_name, u.display_name as user_display_name, u.avatar_icon as user_avatar_icon "+
-			"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id in (?)",
-			messageIDs)
+			"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id in (?) ORDER BY FIELD (m.id, ?)",
+			messageIDs, messageIDs)
 		if err != nil {
 			return err
 		}
@@ -682,6 +708,7 @@ func postProfile(c echo.Context) error {
 
 	avatarName := ""
 	var avatarData []byte
+	editName := c.FormValue("display_name")
 
 	if fh, err := c.FormFile("avatar_icon"); err == http.ErrMissingFile {
 		// no file upload
@@ -714,32 +741,45 @@ func postProfile(c echo.Context) error {
 		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData), ext)
 	}
 
+	updateAvatarIcon := ""
+
 	if avatarName != "" && len(avatarData) > 0 {
 		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
-		path := `/home/isucon/isubata/webapp/public/icons/` + avatarName
-		err := ioutil.WriteFile(path, avatarData, 0644)
-		if err != nil {
-			return err
-		}
-		//_, err = db.Exec("INSERT INTO image (name, data) VALUES (?, ?)", avatarName, avatarData)
-		//if err != nil {
-		//	return err
-		//}
-		_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?", avatarName, self.ID)
-		if err != nil {
-			return err
+		path := `/home/isucon/isubata/webapp/public/icons/` + imageDir + avatarName
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			// ファイルがないときだけ書く
+			err := ioutil.WriteFile(path, avatarData, 0644)
+			if err != nil {
+				return err
+			}
 		}
 
-		self.AvatarIcon = avatarName
+		updateAvatarIcon = imageDir + avatarName
 	}
 
-	if name := c.FormValue("display_name"); name != "" {
-		_, err := db.Exec("UPDATE user SET display_name = ? WHERE id = ?", name, self.ID)
-		if err != nil {
-			return err
+	err = nil
+	if updateAvatarIcon != "" {
+		if editName != "" {
+			_, err = db.Exec("UPDATE user SET avatar_icon = ?, display_name = ? WHERE id = ?",
+				updateAvatarIcon, editName, self.ID)
+
+			self.AvatarIcon = updateAvatarIcon
+			self.DisplayName = editName
+		} else {
+			_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?",
+				updateAvatarIcon, self.ID)
+
+			self.AvatarIcon = updateAvatarIcon
 		}
 
-		self.DisplayName = name
+	} else if editName != "" {
+		_, err = db.Exec("UPDATE user SET display_name = ? WHERE id = ?",
+			editName, self.ID)
+
+		self.DisplayName = editName
+	}
+	if err != nil {
+		return err
 	}
 
 	sessSetUser(c, self)
@@ -792,6 +832,8 @@ func tRange(a, b int64) []int64 {
 	return r
 }
 
+var imageDir string
+
 func main() {
 	e := echo.New()
 	funcs := template.FuncMap{
@@ -802,9 +844,9 @@ func main() {
 		templates: template.Must(template.New("").Funcs(funcs).ParseGlob("views/*.html")),
 	}
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte("secretonymoris"))))
-	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
-		Format: "request:\"${method} ${uri}\" status:${status} latency:${latency} (${latency_human}) bytes:${bytes_out}\n",
-	}))
+	//e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+	//	Format: "request:\"${method} ${uri}\" status:${status} latency:${latency} (${latency_human}) bytes:${bytes_out}\n",
+	//}))
 	e.Use(middleware.Static("../public"))
 
 	e.GET("/initialize", getInitialize)
@@ -827,6 +869,14 @@ func main() {
 	e.GET("add_channel", getAddChannel)
 	e.POST("add_channel", postAddChannel)
 	e.GET("/icons/:file_name", getIcon)
+
+	// ホスト名からディレクトリ決める
+	host, err := os.Hostname()
+	if err != nil {
+		panic(`failed to get hostname`)
+	}
+	fmt.Println("hostname = ", host)
+	imageDir = fmt.Sprintf("0%s/", host[len(host)-1:])
 
 	e.Start(":5000")
 }
