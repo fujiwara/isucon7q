@@ -662,7 +662,13 @@ func postProfile(c echo.Context) error {
 	}
 
 	if avatarName != "" && len(avatarData) > 0 {
-		_, err := db.Exec("INSERT INTO image (name, data) VALUES (?, ?)", avatarName, avatarData)
+		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
+		path := `/home/isucon/isubata/webapp/public/icons` + name
+		err := os.Rename(fh.Filename, path)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec("INSERT INTO image (name, data) VALUES (?, ?)", avatarName, avatarData)
 		if err != nil {
 			return err
 		}
