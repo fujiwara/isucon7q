@@ -201,18 +201,33 @@ func randomString(n int) string {
 	return string(b)
 }
 
-func register(name, password string) (int64, error) {
+func register(name, password string) (*User, error) {
 	salt := randomString(20)
 	digest := fmt.Sprintf("%x", sha1.Sum([]byte(salt+password)))
+	now := time.Now()
 
 	res, err := db.Exec(
 		"INSERT INTO user (name, salt, password, display_name, avatar_icon, created_at)"+
-			" VALUES (?, ?, ?, ?, ?, NOW())",
-		name, salt, digest, name, "default.png")
+			" VALUES (?, ?, ?, ?, ?, ?)",
+		name, salt, digest, name, "default.png", now.Format("2006-01-02 15:04:05"))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.LastInsertId()
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{
+		ID:          id,
+		Name:        name,
+		Salt:        salt,
+		Password:    digest,
+		DisplayName: name,
+		AvatarIcon:  "default.png",
+		CreatedAt:   now,
+	}, nil
 }
 
 // request handlers
@@ -291,7 +306,7 @@ func postRegister(c echo.Context) error {
 	if name == "" || pw == "" {
 		return ErrBadReqeust
 	}
-	userID, err := register(name, pw)
+	user, err := register(name, pw)
 	if err != nil {
 		if merr, ok := err.(*mysql.MySQLError); ok {
 			if merr.Number == 1062 { // Duplicate entry xxxx for key zzzz
@@ -300,7 +315,7 @@ func postRegister(c echo.Context) error {
 		}
 		return err
 	}
-	sessSetUserID(c, userID)
+	sessSetUserID(c, user.ID)
 	return c.Redirect(http.StatusSeeOther, "/")
 }
 
