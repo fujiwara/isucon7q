@@ -717,7 +717,7 @@ func postProfile(c echo.Context) error {
 			return ErrBadReqeust
 		}
 
-		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData), ext)
+		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData[:1023]), ext)
 	}
 
 	if avatarName != "" && len(avatarData) > 0 {
