@@ -448,7 +448,6 @@ func fetchUnread(c echo.Context) error {
 		query, args, err := sqlx.In(
 			"SELECT channel_id, message_id FROM haveread WHERE user_id = ? AND channel_id in (?)",
 			userID, channels)
-		fmt.Println("query", query)
 		if err != nil {
 			return err
 		}
@@ -688,6 +687,7 @@ func postProfile(c echo.Context) error {
 
 	avatarName := ""
 	var avatarData []byte
+	editName := c.FormValue("display_name")
 
 	if fh, err := c.FormFile("avatar_icon"); err == http.ErrMissingFile {
 		// no file upload
@@ -720,6 +720,8 @@ func postProfile(c echo.Context) error {
 		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData), ext)
 	}
 
+	updateAvatarIcon := ""
+
 	if avatarName != "" && len(avatarData) > 0 {
 		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
 		path := `/home/isucon/isubata/webapp/public/icons/`+ imageDir + avatarName
@@ -730,17 +732,24 @@ func postProfile(c echo.Context) error {
 				return err
 			}
 		}
-		_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?", imageDir + avatarName, self.ID)
-		if err != nil {
-			return err
-		}
+		updateAvatarIcon = imageDir + avatarName
 	}
 
-	if name := c.FormValue("display_name"); name != "" {
-		_, err := db.Exec("UPDATE user SET display_name = ? WHERE id = ?", name, self.ID)
-		if err != nil {
-			return err
+	err = nil
+	if updateAvatarIcon != "" {
+		if editName != "" {
+			_, err = db.Exec("UPDATE user SET avatar_icon = ?, display_name = ? WHERE id = ?",
+				updateAvatarIcon, editName, self.ID)
+		} else {
+			_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?",
+				updateAvatarIcon, self.ID)
 		}
+	} else if editName != "" {
+		_, err = db.Exec("UPDATE user SET display_name = ? WHERE id = ?",
+			editName, self.ID)
+	}
+	if err != nil {
+		return err
 	}
 
 	return c.Redirect(http.StatusSeeOther, "/")
