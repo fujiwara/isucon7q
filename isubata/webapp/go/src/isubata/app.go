@@ -367,22 +367,6 @@ func postMessage(c echo.Context) error {
 	return c.NoContent(204)
 }
 
-func jsonifyMessage(m Message) (map[string]interface{}, error) {
-	u := User{}
-	err := db.Get(&u, "SELECT name, display_name, avatar_icon FROM user WHERE id = ?",
-		m.UserID)
-	if err != nil {
-		return nil, err
-	}
-
-	r := make(map[string]interface{})
-	r["id"] = m.ID
-	r["user"] = u
-	r["date"] = m.CreatedAt.Format("2006/01/02 15:04:05")
-	r["content"] = m.Content
-	return r, nil
-}
-
 func getMessage(c echo.Context) error {
 	userID := sessUserID(c)
 	if userID == 0 {
@@ -538,20 +522,45 @@ func getHistory(c echo.Context) error {
 		return ErrBadReqeust
 	}
 
-	messages := []Message{}
-	err = db.Select(&messages,
-		"SELECT * FROM message WHERE channel_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+	// idのみをselect
+	messageIDs := []int{}
+	err = db.Select(&messageIDs,
+		"SELECT id FROM message WHERE channel_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
 		chID, N, (page-1)*N)
 	if err != nil {
 		return err
 	}
 
-	mjson := make([]map[string]interface{}, 0)
-	for i := len(messages) - 1; i >= 0; i-- {
-		r, err := jsonifyMessage(messages[i])
+	// userをjoinして内容取得
+	messages := []Message{}
+	{
+		query, args, err := sqlx.In("SELECT m.*, u.name as user_name, u.display_name as user_display_name, u.avatar_icon as user_avatar_icon "+
+			"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id in (?)",
+			messageIDs)
 		if err != nil {
 			return err
 		}
+
+		err = db.Select(&messages, query, args...)
+		if err != nil {
+			return err
+		}
+	}
+
+	mjson := make([]map[string]interface{}, 0)
+	for i := len(messages) - 1; i >= 0; i-- {
+		// getMessageでやってることと一緒
+		m := messages[i]
+		r := make(map[string]interface{})
+		r["id"] = m.ID
+		r["user"] = User{
+			ID:          m.UserID,
+			Name:        m.UserName,
+			DisplayName: m.UserDisplayName,
+			AvatarIcon:  m.UserAvatarIcon,
+		}
+		r["date"] = m.CreatedAt.Format("2006/01/02 15:04:05")
+		r["content"] = m.Content
 		mjson = append(mjson, r)
 	}
 
