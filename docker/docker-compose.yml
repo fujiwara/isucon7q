@@ -1,0 +1,42 @@
+version: "2"
+
+services:
+  server1:
+    image: "ubuntu:16.04"
+    volumes:
+      - "./../isubata:/isubata"
+    environment:
+      ISUBATA_DB_HOST: db-server
+      ISUBATA_DB_PASSWORD: password
+    ports:
+      - "5000:5000"
+    depends_on:
+      - server3
+    links:
+      - "server3:db-server"
+    working_dir: /isubata/webapp/go
+    command: ./isubata
+
+  # server2:
+  #   image: "ubuntu:16.04"
+  #   volumes:
+  #     - "./../isubata:/isubata"
+  #   environment:
+  #     ISUBATA_DB_HOST: db-server
+  #   ports:
+  #     - "5000:5001"
+  #   depends_on:
+  #     - server3
+  #   links:
+  #     - "server3:db-server"
+  #   command: /isubata/webapp/go/isubata
+
+  server3:
+    image: "mysql:5.7.20"
+    volumes:
+      - "./../isubata:/isubata"
+      - "./db:/var/lib/mysql"
+    environment:
+      MYSQL_ROOT_PASSWORD: "password"
+    ports:
+      - "3306:3306"
