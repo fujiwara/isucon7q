@@ -695,7 +695,7 @@ func postProfile(c echo.Context) error {
 
 	if avatarName != "" && len(avatarData) > 0 {
 		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
-		path := `/home/isucon/isubata/webapp/public/icons/01/` + avatarName
+		path := `/home/isucon/isubata/webapp/public/icons/`+ imageDir + avatarName
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			// ファイルがないときだけ書く
 			err := ioutil.WriteFile(path, avatarData, 0644)
@@ -703,7 +703,7 @@ func postProfile(c echo.Context) error {
 				return err
 			}
 		}
-		_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?", "01/"+avatarName, self.ID)
+		_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?", imageDir + avatarName, self.ID)
 		if err != nil {
 			return err
 		}
@@ -764,6 +764,8 @@ func tRange(a, b int64) []int64 {
 	return r
 }
 
+var imageDir string
+
 func main() {
 	e := echo.New()
 	funcs := template.FuncMap{
@@ -800,5 +802,13 @@ func main() {
 	e.POST("add_channel", postAddChannel)
 	e.GET("/icons/:file_name", getIcon)
 
+	// ホスト名からディレクトリ決める
+	host, err := os.Hostname()
+	if err != nil {
+		panic(`failed to get hostname`)
+	}
+	fmt.Println("hostname = ", host)
+	imageDir = fmt.Sprintf("0%s/", host[len(host)-1:])
+	
 	e.Start(":5000")
 }
