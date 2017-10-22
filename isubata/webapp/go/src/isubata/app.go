@@ -244,6 +244,7 @@ type ChannelInfo struct {
 	Description string    `db:"description"`
 	UpdatedAt   time.Time `db:"updated_at"`
 	CreatedAt   time.Time `db:"created_at"`
+	MessageCount int      `db:"message_count"`
 }
 
 func getChannel(c echo.Context) error {
