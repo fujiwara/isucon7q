@@ -93,17 +93,6 @@ type User struct {
 	CreatedAt   time.Time `json:"-" db:"created_at"`
 }
 
-func getUser(userID int64) (*User, error) {
-	u := User{}
-	if err := db.Get(&u, "SELECT * FROM user WHERE id = ?", userID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &u, nil
-}
-
 func addMessage(channelID, userID int64, content string) (int64, error) {
 	res, err := db.Exec(
 		"INSERT INTO message (channel_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())",
