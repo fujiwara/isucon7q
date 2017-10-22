@@ -535,8 +535,8 @@ func getHistory(c echo.Context) error {
 	messages := []Message{}
 	if 0 < len(messageIDs) {
 		query, args, err := sqlx.In("SELECT m.*, u.name as user_name, u.display_name as user_display_name, u.avatar_icon as user_avatar_icon "+
-			"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id in (?)",
-			messageIDs)
+			"FROM message m JOIN user u ON m.user_id = u.id WHERE m.id in (?) ORDER BY FIELD (m.id, ?)",
+			messageIDs, messageIDs)
 		if err != nil {
 			return err
 		}
