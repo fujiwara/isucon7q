@@ -729,6 +729,8 @@ func postProfile(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+
+		self.AvatarIcon = avatarName
 	}
 
 	if name := c.FormValue("display_name"); name != "" {
@@ -736,7 +738,11 @@ func postProfile(c echo.Context) error {
 		if err != nil {
 			return err
 		}
+
+		self.DisplayName = name
 	}
+
+	sessSetUser(c, self)
 
 	return c.Redirect(http.StatusSeeOther, "/")
 }
