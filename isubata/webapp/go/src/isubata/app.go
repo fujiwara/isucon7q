@@ -628,6 +628,7 @@ func postProfile(c echo.Context) error {
 	}
 
 	avatarName := ""
+	uploadFilePath := ""
 	var avatarData []byte
 
 	if fh, err := c.FormFile("avatar_icon"); err == http.ErrMissingFile {
@@ -635,6 +636,7 @@ func postProfile(c echo.Context) error {
 	} else if err != nil {
 		return err
 	} else {
+		uploadFilePath = fh.Filename
 		dotPos := strings.LastIndexByte(fh.Filename, '.')
 		if dotPos < 0 {
 			return ErrBadReqeust
@@ -662,7 +664,13 @@ func postProfile(c echo.Context) error {
 	}
 
 	if avatarName != "" && len(avatarData) > 0 {
-		_, err := db.Exec("INSERT INTO image (name, data) VALUES (?, ?)", avatarName, avatarData)
+		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
+		path := `/home/isucon/isubata/webapp/public/icons/` + avatarName
+		err := os.Rename(uploadFilePath, path)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec("INSERT INTO image (name, data) VALUES (?, ?)", avatarName, avatarData)
 		if err != nil {
 			return err
 		}
@@ -683,10 +691,17 @@ func postProfile(c echo.Context) error {
 }
 
 func getIcon(c echo.Context) error {
+	// ローカルにファイルあったらそれを使う
+	fileName := c.Param("file_name")
+	path := `/home/isucon/isubata/webapp/public/icons/`+fileName
+	if _, err := os.Stat(path); os.IsExist(err) {
+		return c.File(path)
+	}
+	
 	var name string
 	var data []byte
 	err := db.QueryRow("SELECT name, data FROM image WHERE name = ? LIMIT 1",
-		c.Param("file_name")).Scan(&name, &data)
+		fileName).Scan(&name, &data)
 	if err == sql.ErrNoRows {
 		return echo.ErrNotFound
 	}
