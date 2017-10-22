@@ -1,17 +1,19 @@
 CREATE TABLE user (
   id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL PRIMARY KEY,
-  name VARCHAR(191) UNIQUE,
+  name VARCHAR(191),
   salt VARCHAR(20),
   password VARCHAR(40),
   display_name TEXT,
   avatar_icon TEXT,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  UNIQUE idx_name (name)
 ) Engine=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE image (
   id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL PRIMARY KEY,
   name VARCHAR(191),
-  data LONGBLOB
+  data LONGBLOB,
+  INDEX idx_name (name)
 ) Engine=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE channel (
@@ -27,7 +29,8 @@ CREATE TABLE message (
   channel_id BIGINT,
   user_id BIGINT,
   content TEXT,
-  created_at DATETIME NOT NULL
+  created_at DATETIME NOT NULL,
+  INDEX idx_messages (channel_id, id)
 ) Engine=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE haveread (
