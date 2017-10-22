@@ -663,7 +663,7 @@ func postProfile(c echo.Context) error {
 
 	if avatarName != "" && len(avatarData) > 0 {
 		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
-		path := `/home/isucon/isubata/webapp/public/icons` + name
+		path := `/home/isucon/isubata/webapp/public/icons/` + name
 		err := os.Rename(fh.Filename, path)
 		if err != nil {
 			return err
@@ -689,10 +689,17 @@ func postProfile(c echo.Context) error {
 }
 
 func getIcon(c echo.Context) error {
+	// ローカルにファイルあったらそれを使う
+	fileName := c.Param("file_name")
+	path : =`/home/isucon/isubata/webapp/public/icons/`+fileName
+	if _, err := os.Stat(path); os.IsExist(err) {
+		return c.File(path)
+	}
+	
 	var name string
 	var data []byte
 	err := db.QueryRow("SELECT name, data FROM image WHERE name = ?",
-		c.Param("file_name")).Scan(&name, &data)
+		fileName).Scan(&name, &data)
 	if err == sql.ErrNoRows {
 		return echo.ErrNotFound
 	}
