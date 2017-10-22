@@ -422,27 +422,6 @@ func queryChannels() ([]int64, error) {
 	return res, err
 }
 
-func queryHaveRead(userID, chID int64) (int64, error) {
-	type HaveRead struct {
-		UserID    int64     `db:"user_id"`
-		ChannelID int64     `db:"channel_id"`
-		MessageID int64     `db:"message_id"`
-		UpdatedAt time.Time `db:"updated_at"`
-		CreatedAt time.Time `db:"created_at"`
-	}
-	h := HaveRead{}
-
-	err := db.Get(&h, "SELECT * FROM haveread WHERE user_id = ? AND channel_id = ?",
-		userID, chID)
-
-	if err == sql.ErrNoRows {
-		return 0, nil
-	} else if err != nil {
-		return 0, err
-	}
-	return h.MessageID, nil
-}
-
 func fetchUnread(c echo.Context) error {
 	userID := sessUserID(c)
 	if userID == 0 {
@@ -458,22 +437,48 @@ func fetchUnread(c echo.Context) error {
 
 	resp := []map[string]interface{}{}
 
-	for _, chID := range channels {
-		lastID, err := queryHaveRead(userID, chID)
+	type HaveRead struct {
+		ChannelID int64 `db:"channel_id"`
+		MessageID int64 `db:"message_id"`
+	}
+
+	// lastIDをまとめて取ってくる
+	haveReads := make(map[int64]int64)
+	{
+		query, args, err := sqlx.In(
+			"SELECT channel_id, message_id FROM haveread WHERE user_id = ? AND channel_id in (?)",
+			userID, channels)
+		fmt.Println("query", query)
 		if err != nil {
 			return err
 		}
 
-		var cnt int64
-		if lastID > 0 {
-			err = db.Get(&cnt,
-				"SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id",
-				chID, lastID)
-		} else {
-			err = db.Get(&cnt,
-				"SELECT message_count as cnt FROM channel WHERE id = ?",
-				chID)
+		hs := []HaveRead{}
+		err = db.Select(&hs, query, args...)
+		if err != nil {
+			return err
 		}
+
+		for _, h := range hs {
+			haveReads[h.ChannelID] = h.MessageID
+		}
+	}
+
+	noReadChanIDs := []int64{}
+
+	for _, chID := range channels {
+		lastID := haveReads[chID]
+
+		// 未読情報がないものはあとでまとめて取る
+		if lastID == 0 {
+			noReadChanIDs = append(noReadChanIDs, chID)
+			continue
+		}
+
+		var cnt int64
+		err = db.Get(&cnt,
+			"SELECT COUNT(*) as cnt FROM message WHERE channel_id = ? AND ? < id",
+			chID, lastID)
 		if err != nil {
 			return err
 		}
@@ -481,6 +486,28 @@ func fetchUnread(c echo.Context) error {
 			"channel_id": chID,
 			"unread":     cnt}
 		resp = append(resp, r)
+	}
+
+	// 未読情報がないもの
+	if 0 < len(noReadChanIDs) {
+		query, args, err := sqlx.In("SELECT * FROM channel WHERE id in (?)",
+			noReadChanIDs)
+		if err != nil {
+			return nil
+		}
+
+		chans := []ChannelInfo{}
+		err = db.Select(&chans, query, args...)
+		if err != nil {
+			return err
+		}
+
+		for _, ch := range chans {
+			r := map[string]interface{}{
+				"channel_id": ch.ID,
+				"unread":     ch.MessageCount}
+			resp = append(resp, r)
+		}
 	}
 
 	return c.JSON(http.StatusOK, resp)
