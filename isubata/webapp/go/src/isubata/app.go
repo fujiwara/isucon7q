@@ -145,48 +145,65 @@ func queryMessages(chanID, lastID int64) ([]Message, error) {
 }
 
 func sessUserID(c echo.Context) int64 {
-	sess, _ := session.Get("session", c)
-	var userID int64
-	if x, ok := sess.Values["user_id"]; ok {
-		userID, _ = x.(int64)
-	}
-	return userID
+	return sessGetInt64(c, "user_id")
 }
 
-func sessSetUserID(c echo.Context, id int64) {
+func sessGetInt64(c echo.Context, name string) int64 {
+	sess, _ := session.Get("session", c)
+	var v int64
+	if x, ok := sess.Values[name]; ok {
+		v, _ = x.(int64)
+	}
+	return v
+}
+
+func sessGetString(c echo.Context, name string) string {
+	sess, _ := session.Get("session", c)
+	var v string
+	if x, ok := sess.Values[name]; ok {
+		v, _ = x.(string)
+	}
+	return v
+}
+
+func sessGetTime(c echo.Context, name string) time.Time {
+	sess, _ := session.Get("session", c)
+	var s string
+	if x, ok := sess.Values[name]; ok {
+		s, _ = x.(string)
+	}
+	t, _ := time.Parse("2006-01-02 15:04:05", s)
+	return t
+}
+
+func sessSetUser(c echo.Context, user *User) {
 	sess, _ := session.Get("session", c)
 	sess.Options = &sessions.Options{
 		HttpOnly: true,
 		MaxAge:   360000,
 	}
-	sess.Values["user_id"] = id
+	sess.Values["user_id"] = user.ID
+	sess.Values["user_name"] = user.Name
+	sess.Values["user_display_name"] = user.DisplayName
+	sess.Values["user_avator_icon"] = user.AvatarIcon
+	sess.Values["user_created_at"] = user.CreatedAt
 	sess.Save(c.Request(), c.Response())
 }
 
 func ensureLogin(c echo.Context) (*User, error) {
-	var user *User
-	var err error
-
 	userID := sessUserID(c)
 	if userID == 0 {
-		goto redirect
+		c.Redirect(http.StatusSeeOther, "/login")
+		return nil, nil
 	}
 
-	user, err = getUser(userID)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		sess, _ := session.Get("session", c)
-		delete(sess.Values, "user_id")
-		sess.Save(c.Request(), c.Response())
-		goto redirect
-	}
-	return user, nil
-
-redirect:
-	c.Redirect(http.StatusSeeOther, "/login")
-	return nil, nil
+	return &User{
+		ID:          userID,
+		Name:        sessGetString(c, "user_name"),
+		DisplayName: sessGetString(c, "user_display_name"),
+		AvatarIcon:  sessGetString(c, "user_avator_icon"),
+		CreatedAt:   sessGetTime(c, "user_created_at"),
+	}, nil
 }
 
 const LettersAndDigits = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -315,7 +332,7 @@ func postRegister(c echo.Context) error {
 		}
 		return err
 	}
-	sessSetUserID(c, user.ID)
+	sessSetUser(c, user)
 	return c.Redirect(http.StatusSeeOther, "/")
 }
 
@@ -346,7 +363,7 @@ func postLogin(c echo.Context) error {
 	if digest != user.Password {
 		return echo.ErrForbidden
 	}
-	sessSetUserID(c, user.ID)
+	sessSetUser(c, &user)
 	return c.Redirect(http.StatusSeeOther, "/")
 }
 
