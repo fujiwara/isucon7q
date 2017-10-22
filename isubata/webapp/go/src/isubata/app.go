@@ -93,17 +93,6 @@ type User struct {
 	CreatedAt   time.Time `json:"-" db:"created_at"`
 }
 
-func getUser(userID int64) (*User, error) {
-	u := User{}
-	if err := db.Get(&u, "SELECT * FROM user WHERE id = ?", userID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &u, nil
-}
-
 func addMessage(channelID, userID int64, content string) (int64, error) {
 	res, err := db.Exec(
 		"INSERT INTO message (channel_id, user_id, content, created_at) VALUES (?, ?, ?, NOW())",
@@ -145,48 +134,65 @@ func queryMessages(chanID, lastID int64) ([]Message, error) {
 }
 
 func sessUserID(c echo.Context) int64 {
-	sess, _ := session.Get("session", c)
-	var userID int64
-	if x, ok := sess.Values["user_id"]; ok {
-		userID, _ = x.(int64)
-	}
-	return userID
+	return sessGetInt64(c, "user_id")
 }
 
-func sessSetUserID(c echo.Context, id int64) {
+func sessGetInt64(c echo.Context, name string) int64 {
+	sess, _ := session.Get("session", c)
+	var v int64
+	if x, ok := sess.Values[name]; ok {
+		v, _ = x.(int64)
+	}
+	return v
+}
+
+func sessGetString(c echo.Context, name string) string {
+	sess, _ := session.Get("session", c)
+	var v string
+	if x, ok := sess.Values[name]; ok {
+		v, _ = x.(string)
+	}
+	return v
+}
+
+func sessGetTime(c echo.Context, name string) time.Time {
+	sess, _ := session.Get("session", c)
+	var s string
+	if x, ok := sess.Values[name]; ok {
+		s, _ = x.(string)
+	}
+	t, _ := time.Parse("2006-01-02 15:04:05", s)
+	return t
+}
+
+func sessSetUser(c echo.Context, user *User) {
 	sess, _ := session.Get("session", c)
 	sess.Options = &sessions.Options{
 		HttpOnly: true,
 		MaxAge:   360000,
 	}
-	sess.Values["user_id"] = id
+	sess.Values["user_id"] = user.ID
+	sess.Values["user_name"] = user.Name
+	sess.Values["user_display_name"] = user.DisplayName
+	sess.Values["user_avator_icon"] = user.AvatarIcon
+	sess.Values["user_created_at"] = user.CreatedAt.Format("2006-01-02 15:04:05")
 	sess.Save(c.Request(), c.Response())
 }
 
 func ensureLogin(c echo.Context) (*User, error) {
-	var user *User
-	var err error
-
 	userID := sessUserID(c)
 	if userID == 0 {
-		goto redirect
+		c.Redirect(http.StatusSeeOther, "/login")
+		return nil, nil
 	}
 
-	user, err = getUser(userID)
-	if err != nil {
-		return nil, err
-	}
-	if user == nil {
-		sess, _ := session.Get("session", c)
-		delete(sess.Values, "user_id")
-		sess.Save(c.Request(), c.Response())
-		goto redirect
-	}
-	return user, nil
-
-redirect:
-	c.Redirect(http.StatusSeeOther, "/login")
-	return nil, nil
+	return &User{
+		ID:          userID,
+		Name:        sessGetString(c, "user_name"),
+		DisplayName: sessGetString(c, "user_display_name"),
+		AvatarIcon:  sessGetString(c, "user_avator_icon"),
+		CreatedAt:   sessGetTime(c, "user_created_at"),
+	}, nil
 }
 
 const LettersAndDigits = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -201,18 +207,33 @@ func randomString(n int) string {
 	return string(b)
 }
 
-func register(name, password string) (int64, error) {
+func register(name, password string) (*User, error) {
 	salt := randomString(20)
 	digest := fmt.Sprintf("%x", sha1.Sum([]byte(salt+password)))
+	now := time.Now()
 
 	res, err := db.Exec(
 		"INSERT INTO user (name, salt, password, display_name, avatar_icon, created_at)"+
-			" VALUES (?, ?, ?, ?, ?, NOW())",
-		name, salt, digest, name, "default.png")
+			" VALUES (?, ?, ?, ?, ?, ?)",
+		name, salt, digest, name, "default.png", now.Format("2006-01-02 15:04:05"))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return res.LastInsertId()
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+
+	return &User{
+		ID:          id,
+		Name:        name,
+		Salt:        salt,
+		Password:    digest,
+		DisplayName: name,
+		AvatarIcon:  "default.png",
+		CreatedAt:   now,
+	}, nil
 }
 
 // request handlers
@@ -291,7 +312,7 @@ func postRegister(c echo.Context) error {
 	if name == "" || pw == "" {
 		return ErrBadReqeust
 	}
-	userID, err := register(name, pw)
+	user, err := register(name, pw)
 	if err != nil {
 		if merr, ok := err.(*mysql.MySQLError); ok {
 			if merr.Number == 1062 { // Duplicate entry xxxx for key zzzz
@@ -300,7 +321,7 @@ func postRegister(c echo.Context) error {
 		}
 		return err
 	}
-	sessSetUserID(c, userID)
+	sessSetUser(c, user)
 	return c.Redirect(http.StatusSeeOther, "/")
 }
 
@@ -331,7 +352,7 @@ func postLogin(c echo.Context) error {
 	if digest != user.Password {
 		return echo.ErrForbidden
 	}
-	sessSetUserID(c, user.ID)
+	sessSetUser(c, &user)
 	return c.Redirect(http.StatusSeeOther, "/")
 }
 
@@ -724,7 +745,7 @@ func postProfile(c echo.Context) error {
 
 	if avatarName != "" && len(avatarData) > 0 {
 		// 画像をローカルに保存(テンポラリファイルから保存先にリネーム)
-		path := `/home/isucon/isubata/webapp/public/icons/`+ imageDir + avatarName
+		path := `/home/isucon/isubata/webapp/public/icons/` + imageDir + avatarName
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			// ファイルがないときだけ書く
 			err := ioutil.WriteFile(path, avatarData, 0644)
@@ -732,6 +753,7 @@ func postProfile(c echo.Context) error {
 				return err
 			}
 		}
+
 		updateAvatarIcon = imageDir + avatarName
 	}
 
@@ -740,17 +762,27 @@ func postProfile(c echo.Context) error {
 		if editName != "" {
 			_, err = db.Exec("UPDATE user SET avatar_icon = ?, display_name = ? WHERE id = ?",
 				updateAvatarIcon, editName, self.ID)
+
+			self.AvatarIcon = updateAvatarIcon
+			self.DisplayName = editName
 		} else {
 			_, err = db.Exec("UPDATE user SET avatar_icon = ? WHERE id = ?",
 				updateAvatarIcon, self.ID)
+
+			self.AvatarIcon = updateAvatarIcon
 		}
+
 	} else if editName != "" {
 		_, err = db.Exec("UPDATE user SET display_name = ? WHERE id = ?",
 			editName, self.ID)
+
+		self.DisplayName = editName
 	}
 	if err != nil {
 		return err
 	}
+
+	sessSetUser(c, self)
 
 	return c.Redirect(http.StatusSeeOther, "/")
 }
@@ -845,6 +877,6 @@ func main() {
 	}
 	fmt.Println("hostname = ", host)
 	imageDir = fmt.Sprintf("0%s/", host[len(host)-1:])
-	
+
 	e.Start(":5000")
 }
