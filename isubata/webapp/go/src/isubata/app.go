@@ -735,6 +735,7 @@ func postProfile(c echo.Context) error {
 		updateAvatarIcon = imageDir + avatarName
 	}
 
+	err = nil
 	if updateAvatarIcon != "" {
 		if editName != "" {
 			_, err = db.Exec("UPDATE user SET avatar_icon = ?, display_name = ? WHERE id = ?",
