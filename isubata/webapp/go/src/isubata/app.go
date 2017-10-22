@@ -186,7 +186,7 @@ func sessSetUser(c echo.Context, user *User) {
 	sess.Values["user_name"] = user.Name
 	sess.Values["user_display_name"] = user.DisplayName
 	sess.Values["user_avator_icon"] = user.AvatarIcon
-	sess.Values["user_created_at"] = user.CreatedAt
+	sess.Values["user_created_at"] = user.CreatedAt.Format("2006-01-02 15:04:05")
 	sess.Save(c.Request(), c.Response())
 }
 
