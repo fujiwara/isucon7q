@@ -692,8 +692,6 @@ func postProfile(c echo.Context) error {
 	updateAvatarIcon := ""
 
 	if fh, err := c.FormFile("avatar_icon"); err == http.ErrMissingFile {
-		// なにもしない
-	} else {
 		if err != nil {
 			return err
 		}
