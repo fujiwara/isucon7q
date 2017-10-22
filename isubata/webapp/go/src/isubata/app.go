@@ -713,7 +713,7 @@ func postProfile(c echo.Context) error {
 			return err
 		}
 		defer file.Close()
-		_, err = file.Read(avatarData)//ioutil.ReadAll(file)
+		_, err = file.Read(avatarData)
 		avatarName = fmt.Sprintf("%x%s", sha1.Sum(avatarData), ext)
 
 		if avatarName != "" && len(avatarData) > 0 {
@@ -735,14 +735,12 @@ func postProfile(c echo.Context) error {
 				}
 				localFile.Close()
 
-				if n1 + n2 > avatarMaxBytes {
+				if n1 + int(n2) > avatarMaxBytes {
 					os.Remove(path)
 					return ErrBadReqeust
 				}
 			}
-		}
 
-			}
 			updateAvatarIcon = imageDir + avatarName
 		}
 
