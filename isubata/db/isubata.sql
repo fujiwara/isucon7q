@@ -6,7 +6,7 @@ CREATE TABLE user (
   display_name TEXT,
   avatar_icon TEXT,
   created_at DATETIME NOT NULL,
-  INDEX idx_name (name)
+  UNIQUE idx_name (name)
 ) Engine=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE image (
